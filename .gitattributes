@@ -1,0 +1,15 @@
+* text=auto
+
+*.rs        text diff=rust
+*.toml      text diff=toml
+Cargo.lock  text
+
+.vscode/*.json linguist-language=JSON-with-Comments
+
+.githooks/*     export-ignore text eol=lf linguist-vendored
+.gitattributes  export-ignore
+.gitignore      export-ignore
+.gitkeep        export-ignore
+
+# Line endings should be preserved
+*.patch -text
