@@ -18,10 +18,11 @@
   }:
     flake-utils.lib.eachDefaultSystem (
       system: let
-        pkgs = import nixpkgs {inherit system;};
+        overlays = [fenix.overlays.default];
+        pkgs = import nixpkgs {inherit system overlays;};
         pkgs_aarch64 = pkgs.pkgsCross.aarch64-multiplatform-musl;
         pkgs_arm = import nixpkgs {
-          inherit system;
+          inherit system overlays;
           crossSystem.config = "armv7l-unknown-linux-musleabihf";
         };
         pkgs_amd64 = pkgs.pkgsCross.musl64;
