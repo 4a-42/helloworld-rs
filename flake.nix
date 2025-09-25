@@ -20,13 +20,26 @@
       system: let
         overlays = [fenix.overlays.default];
         pkgs = import nixpkgs {inherit system overlays;};
-        pkgs_aarch64 = pkgs.pkgsCross.aarch64-multiplatform-musl;
+        pkgs_aarch64 = import nixpkgs {
+          inherit overlays;
+          localSystem = system;
+          crossSystem = pkgs.lib.systems.examples.aarch64-multiplatform-musl;
+        };
         pkgs_arm = import nixpkgs {
-          inherit system overlays;
+          inherit overlays;
+          localSystem = system;
           crossSystem.config = "armv7l-unknown-linux-musleabihf";
         };
-        pkgs_amd64 = pkgs.pkgsCross.musl64;
-        pkgs_windows = pkgs.pkgsCross.mingwW64;
+        pkgs_amd64 = import nixpkgs {
+          inherit overlays;
+          localSystem = system;
+          crossSystem = pkgs.lib.systems.examples.musl64;
+        };
+        pkgs_windows = import nixpkgs {
+          inherit overlays;
+          localSystem = system;
+          crossSystem = pkgs.lib.systems.examples.mingwW64;
+        };
 
         rustToolchain = fenix.packages.${system}.fromToolchainFile {
           file = ./rust-toolchain.toml;
@@ -42,27 +55,63 @@
 
         nativeBuildInputs = with pkgs; [
           rustToolchain
-          rustPlatform.bindgenHook
+          # rustPlatform.bindgenHook
+          rust-bindgen
           just
           nushell
           p7zip
         ];
 
-        commonArgs = {
-          inherit src nativeBuildInputs;
-          strictDeps = true;
+        commonEnvVars = {
+          # https://github.com/rust-lang/rust-bindgen?tab=readme-ov-file#environment-variables
+          BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_musl = builtins.concatStringsSep " " [
+            "--target=aarch64-unknown-linux-musl"
+            "-I${pkgs_aarch64.libclang.lib}/lib/clang/${pkgs.lib.versions.major (pkgs.lib.getVersion pkgs_aarch64.clang)}/include"
+          ];
+          BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_musleabihf = builtins.concatStringsSep " " [
+            "--target=armv7-unknown-linux-musleabihf"
+            "-I${pkgs_arm.libclang.lib}/lib/clang/${pkgs.lib.versions.major (pkgs.lib.getVersion pkgs_arm.clang)}/include"
+          ];
+          BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_musl = builtins.concatStringsSep " " [
+            "--target=x86_64-unknown-linux-musl"
+            "-I${pkgs_amd64.libclang.lib}/lib/clang/${pkgs.lib.versions.major (pkgs.lib.getVersion pkgs_amd64.clang)}/include"
+          ];
+          BINDGEN_EXTRA_CLANG_ARGS_x86_64_pc_windows_gnu = builtins.concatStringsSep " " [
+            "--target=x86_64-pc-windows-gnu"
+            "-I${pkgs_windows.libclang.lib}/lib/clang/${pkgs.lib.versions.major (pkgs.lib.getVersion pkgs_windows.clang)}/include"
+          ];
+          CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG = true;
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs_aarch64.stdenv.cc}/bin/${pkgs_aarch64.stdenv.cc.targetPrefix}gcc";
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER = "${pkgs_arm.stdenv.cc}/bin/${pkgs_arm.stdenv.cc.targetPrefix}gcc";
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs_amd64.stdenv.cc}/bin/${pkgs_amd64.stdenv.cc.targetPrefix}gcc";
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = "${pkgs_windows.stdenv.cc}/bin/${pkgs_windows.stdenv.cc.targetPrefix}gcc";
+          CC_ENABLE_DEBUG_OUTPUT = true;
+          CC_aarch64_unknown_linux_musl = "${pkgs_aarch64.stdenv.cc}/bin/${pkgs_aarch64.stdenv.cc.targetPrefix}gcc";
+          CC_armv7_unknown_linux_musl = "${pkgs_arm.stdenv.cc}/bin/${pkgs_arm.stdenv.cc.targetPrefix}gcc";
+          CC_x86_64_unknown_linux_musl = "${pkgs_amd64.stdenv.cc}/bin/${pkgs_amd64.stdenv.cc.targetPrefix}gcc";
+          CC_x86_64_pc_windows_gnu = "${pkgs_windows.stdenv.cc}/bin/${pkgs_windows.stdenv.cc.targetPrefix}gcc";
+          CRATE_CC_NO_DEFAULTS = true;
+          # Bindgen seems to want this to point to host's libclang, even when cross-compiling
+          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
           RUST_BACKTRACE = 1;
-
-          preBuild = ''
-            if [ -z "''${CRANE_BUILD_DEPS_ONLY:-}"]; then
-              echo "Setting up downloads folder"
-              mkdir -p _downloads
-              cp ${exampleDependency} _downloads/parg-1.0.3.zip
-              ${pkgs.just}/bin/just download_deps
-              echo "Done setting up downloads folder"
-            fi
-          '';
         };
+
+        commonArgs =
+          {
+            inherit src nativeBuildInputs;
+            strictDeps = true;
+
+            preBuild = ''
+              if [ -z "''${CRANE_BUILD_DEPS_ONLY:-}"]; then
+                echo "Setting up downloads folder"
+                mkdir -p _downloads
+                cp ${exampleDependency} _downloads/parg-1.0.3.zip
+                ${pkgs.just}/bin/just download_deps
+                echo "Done setting up downloads folder"
+              fi
+            '';
+          }
+          // commonEnvVars;
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
         craneLib-aarch64 = (crane.mkLib pkgs_aarch64).overrideToolchain rustToolchain;
@@ -71,10 +120,10 @@
         craneLib-windows = (crane.mkLib pkgs_windows).overrideToolchain rustToolchain;
 
         cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {nativeBuildInputs = [pkgs.rustPlatform.bindgenHook];});
-        cargoArtifacts-aarch64 = craneLib-aarch64.buildDepsOnly (commonArgs // {nativeBuildInputs = [pkgs_aarch64.rustPlatform.bindgenHook];});
-        cargoArtifacts-arm = craneLib-arm.buildDepsOnly (commonArgs // {nativeBuildInputs = [pkgs_arm.rustPlatform.bindgenHook];});
-        cargoArtifacts-amd64 = craneLib-amd64.buildDepsOnly (commonArgs // {nativeBuildInputs = [pkgs_amd64.rustPlatform.bindgenHook];});
-        cargoArtifacts-windows = craneLib-windows.buildDepsOnly (commonArgs // {nativeBuildInputs = [pkgs_windows.rustPlatform.bindgenHook];});
+        cargoArtifacts-aarch64 = craneLib-aarch64.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";});
+        cargoArtifacts-arm = craneLib-arm.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "armv7-unknown-linux-musleabihf";});
+        cargoArtifacts-amd64 = craneLib-amd64.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";});
+        cargoArtifacts-windows = craneLib-windows.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";});
 
         my-crate = craneLib.buildPackage (
           commonArgs // {inherit cargoArtifacts;}
@@ -117,10 +166,26 @@
         };
         devShells = {
           default = craneLib.devShell {packages = nativeBuildInputs ++ [pkgs.rustPlatform.bindgenHook];};
-          cross-aarch64 = craneLib-aarch64.devShell {packages = nativeBuildInputs ++ [pkgs_aarch64.rustPlatform.bindgenHook];};
-          cross-arm = craneLib-arm.devShell {packages = nativeBuildInputs ++ [pkgs_arm.rustPlatform.bindgenHook];};
-          cross-amd64 = craneLib-amd64.devShell {packages = nativeBuildInputs ++ [pkgs_amd64.rustPlatform.bindgenHook];};
-          cross-windows = craneLib-windows.devShell {packages = nativeBuildInputs ++ [pkgs_windows.rustPlatform.bindgenHook];};
+          cross-aarch64 = craneLib-aarch64.devShell ({
+              CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
+              packages = nativeBuildInputs;
+            }
+            // commonEnvVars);
+          cross-arm = craneLib-arm.devShell ({
+              CARGO_BUILD_TARGET = "armv7-unknown-linux-musleabihf";
+              packages = nativeBuildInputs;
+            }
+            // commonEnvVars);
+          cross-amd64 = craneLib-amd64.devShell ({
+              CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+              packages = nativeBuildInputs;
+            }
+            // commonEnvVars);
+          cross-windows = craneLib-windows.devShell ({
+              CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
+              packages = nativeBuildInputs;
+            }
+            // commonEnvVars);
         };
       }
     );
