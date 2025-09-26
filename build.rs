@@ -6,6 +6,12 @@ use std::{env, path::PathBuf};
 const CARGO_MANIFEST_DIR: &'static str = env!("CARGO_MANIFEST_DIR");
 
 fn main() {
+    println!("cargo::warning=Environment Variables:");
+    env::vars().for_each(|(k, v)| {
+        println!("cargo::warning={k}={v}");
+    });
+
+    // https://docs.rs/cc/latest/cc/#external-configuration-via-environment-variables
     cc::Build::new()
         .file(format!("{CARGO_MANIFEST_DIR}/_downloads/parg-1.0.3/parg.c"))
         .compile("parg");
