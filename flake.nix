@@ -172,26 +172,10 @@
         };
         devShells = {
           default = craneLib.devShell {packages = nativeBuildInputs ++ [pkgs.rustPlatform.bindgenHook];};
-          cross-aarch64 = craneLib-aarch64.devShell ({
-              CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
+          cross = craneLib.devShell ({
               packages = nativeBuildInputs;
             }
             // commonEnvVars);
-          cross-arm = craneLib-arm.devShell ({
-              CARGO_BUILD_TARGET = "armv7-unknown-linux-musleabihf";
-              packages = nativeBuildInputs;
-            }
-            // commonEnvVars);
-          cross-amd64 = craneLib-amd64.devShell ({
-              CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-              packages = nativeBuildInputs;
-            }
-            // commonEnvVars);
-          # cross-windows = craneLib-windows.devShell ({
-          #     CARGO_BUILD_TARGET = "x86_64-pc-windows-msvc";
-          #     packages = nativeBuildInputs;
-          #   }
-          #   // commonEnvVars);
         };
       }
     );
