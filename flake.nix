@@ -42,13 +42,13 @@
         };
         # https://github.com/NixOS/nixpkgs/tree/master/pkgs/os-specific/windows/msvcSdk
         # add windows.sdk to native build inputs
-        # pkgs_windows = import nixpkgs {
-        #   inherit overlays;
-        #   localSystem = system;
-        #   crossSystem.config = "x86_64-pc-windows-msvc";
-        #   config.microsoftVisualStudioLicenseAccepted = true;
-        #   config.allowUnfree = true;
-        # };
+        pkgs_windows = import nixpkgs {
+          inherit overlays;
+          localSystem = system;
+          crossSystem.config = "x86_64-pc-windows-msvc";
+          config.microsoftVisualStudioLicenseAccepted = true;
+          config.allowUnfree = true;
+        };
 
         rustToolchain = fenix.packages.${system}.fromToolchainFile {
           file = ./rust-toolchain.toml;
@@ -69,7 +69,6 @@
           pkgs.just
           pkgs.nushell
           pkgs.p7zip
-          # pkgs_windows.windows.sdk
         ];
 
         commonEnvVars = {
@@ -90,10 +89,10 @@
             "--target=x86_64-pc-windows-gnu"
             "-I${pkgs.libclang.lib}/lib/clang/${pkgs.lib.versions.major (pkgs.lib.getVersion pkgs.clang)}/include"
           ];
-          # BINDGEN_EXTRA_CLANG_ARGS_x86_64_pc_windows_msvc = builtins.concatStringsSep " " [
-          #   "--target=x86_64-pc-windows-msvc"
-          #   "-I${pkgs.libclang.lib}/lib/clang/${pkgs.lib.versions.major (pkgs.lib.getVersion pkgs_windows.clang)}/include"
-          # ];
+          BINDGEN_EXTRA_CLANG_ARGS_x86_64_pc_windows_msvc = builtins.concatStringsSep " " [
+            "--target=x86_64-pc-windows-msvc"
+            "-I${pkgs.libclang.lib}/lib/clang/${pkgs.lib.versions.major (pkgs.lib.getVersion pkgs.clang)}/include"
+          ];
           CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG = true;
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs_aarch64.stdenv.cc}/bin/${pkgs_aarch64.stdenv.cc.targetPrefix}gcc";
           CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER = "${pkgs_arm.stdenv.cc}/bin/${pkgs_arm.stdenv.cc.targetPrefix}gcc";
@@ -103,18 +102,18 @@
             "-L"
             "${pkgs_mingw.windows.pthreads}/lib"
           ];
-          # CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = "${pkgs_windows.stdenv.cc}/bin/${pkgs_windows.stdenv.cc.targetPrefix}gcc";
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = "${pkgs_windows.stdenv.cc}/bin/${pkgs_windows.stdenv.cc.targetPrefix}gcc";
           CC_ENABLE_DEBUG_OUTPUT = true;
           CC_aarch64_unknown_linux_musl = "${pkgs_aarch64.stdenv.cc}/bin/${pkgs_aarch64.stdenv.cc.targetPrefix}gcc";
           CC_armv7_unknown_linux_musl = "${pkgs_arm.stdenv.cc}/bin/${pkgs_arm.stdenv.cc.targetPrefix}gcc";
           CC_x86_64_unknown_linux_musl = "${pkgs_amd64.stdenv.cc}/bin/${pkgs_amd64.stdenv.cc.targetPrefix}gcc";
           CC_x86_64_pc_windows_gnu = "${pkgs_mingw.stdenv.cc}/bin/${pkgs_mingw.stdenv.cc.targetPrefix}gcc";
-          # CC_x86_64_pc_windows_msvc = "${pkgs_windows.stdenv.cc}/bin/${pkgs_windows.stdenv.cc.targetPrefix}gcc";
+          CC_x86_64_pc_windows_msvc = "${pkgs_windows.stdenv.cc}/bin/${pkgs_windows.stdenv.cc.targetPrefix}gcc";
           CRATE_CC_NO_DEFAULTS = true;
           # Bindgen seems to want this to point to host's libclang, even when cross-compiling
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
           RUST_BACKTRACE = 1;
-          # NIXPKGS_ALLOW_UNFREE = 1;
+          NIXPKGS_ALLOW_UNFREE = 1;
         };
 
         commonArgs =
@@ -139,14 +138,16 @@
         craneLib-arm = (crane.mkLib pkgs_arm).overrideToolchain rustToolchain;
         craneLib-amd64 = (crane.mkLib pkgs_amd64).overrideToolchain rustToolchain;
         craneLib-mingw = (crane.mkLib pkgs_mingw).overrideToolchain rustToolchain;
-        # craneLib-windows = (crane.mkLib pkgs_windows).overrideToolchain rustToolchain;
+        craneLib-windows = (crane.mkLib pkgs_windows).overrideToolchain rustToolchain;
 
         cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {nativeBuildInputs = [pkgs.rustPlatform.bindgenHook];});
         cargoArtifacts-aarch64 = craneLib-aarch64.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";});
         cargoArtifacts-arm = craneLib-arm.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "armv7-unknown-linux-musleabihf";});
         cargoArtifacts-amd64 = craneLib-amd64.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";});
         cargoArtifacts-mingw = craneLib-mingw.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";});
-        # cargoArtifacts-windows = craneLib-windows.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "x86_64-pc-windows-msvc";});
+        cargoArtifacts-windows = craneLib-windows.buildDepsOnly (commonArgs // {CARGO_BUILD_TARGET = "x86_64-pc-windows-msvc";
+                  nativeBuildInputs = [pkgs_windows.windows.sdk];
+});
 
         my-crate = craneLib.buildPackage (
           commonArgs // {inherit cargoArtifacts;}
@@ -179,13 +180,13 @@
             CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
           }
         );
-        # my-crate-windows = craneLib-windows.buildPackage (
-        #   commonArgs
-        #   // {
-        #     inherit cargoArtifacts-windows;
-        #     CARGO_BUILD_TARGET = "x86_64-pc-windows-msvc";
-        #   }
-        # );
+        my-crate-windows = craneLib-windows.buildPackage (
+          commonArgs
+          // {
+            inherit cargoArtifacts-windows;
+            CARGO_BUILD_TARGET = "x86_64-pc-windows-msvc";
+          }
+        );
       in {
         packages = {
           default = my-crate;
@@ -193,7 +194,7 @@
           cross-arm = my-crate-arm;
           cross-amd64 = my-crate-amd64;
           cross-mingw = my-crate-mingw;
-          # cross-windows = my-crate-windows;
+          cross-windows = my-crate-windows;
         };
         devShells = {
           default = craneLib.devShell {packages = nativeBuildInputs ++ [pkgs.rustPlatform.bindgenHook];};
@@ -202,6 +203,7 @@
             }
             // commonEnvVars);
         };
+        formatter = pkgs.alejandra;
       }
     );
 }
